@@ -1,0 +1,92 @@
+{
+    "LSTM + Isolation Forest": {
+        "accuracy": 0.3893899204244032,
+        "precision": 0.981549815498155,
+        "recall": 0.18838526912181303,
+        "f1": 0.31610219845513965,
+        "roc_auc": 0.8089211170935922,
+        "pr_auc": 0.9250758056484741,
+        "threshold": 0.5343475563220537
+    },
+    "LSTM + Local Outlier Factor": {
+        "accuracy": 0.8870026525198939,
+        "precision": 0.9934156378600824,
+        "recall": 0.8548158640226629,
+        "f1": 0.918918918918919,
+        "roc_auc": 0.9897990046056454,
+        "pr_auc": 0.9965850340538907,
+        "threshold": -0.3086103677749635
+    },
+    "LSTM + One-Class SVM": {
+        "accuracy": 0.696551724137931,
+        "precision": 0.9794520547945206,
+        "recall": 0.6076487252124646,
+        "f1": 0.75,
+        "roc_auc": 0.8456420054022005,
+        "pr_auc": 0.9494041609446451,
+        "threshold": 0.4278508979090925
+    },
+    "LSTM Autoencoder + Isolation Forest": {
+        "accuracy": 0.2509283819628647,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.04399619090968982,
+        "pr_auc": 0.5436710481264247,
+        "threshold": 0.5090674902481295
+    },
+    "LSTM Autoencoder + Local Outlier Factor": {
+        "accuracy": 0.2949602122015915,
+        "precision": 0.946236559139785,
+        "recall": 0.06232294617563739,
+        "f1": 0.11694352159468438,
+        "roc_auc": 0.28964658110188124,
+        "pr_auc": 0.7061170067207674,
+        "threshold": -0.3940765023231507
+    },
+    "LSTM Autoencoder + One-Class SVM": {
+        "accuracy": 0.24986737400530504,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.13603573118363288,
+        "pr_auc": 0.5678909807921693,
+        "threshold": 0.8379232566913916
+    },
+    "Hybrid LSTM + Autoencoder + Isolation Forest": {
+        "accuracy": 0.2509283819628647,
+        "precision": 0.5,
+        "recall": 0.00141643059490085,
+        "f1": 0.002824858757062147,
+        "roc_auc": 0.33859129539016225,
+        "pr_auc": 0.6656318612180843,
+        "threshold": 0.5147763665968722
+    },
+    "Hybrid LSTM + Autoencoder + Local Outlier Factor": {
+        "accuracy": 0.6079575596816976,
+        "precision": 0.9814020028612304,
+        "recall": 0.48583569405099153,
+        "f1": 0.649928943628612,
+        "roc_auc": 0.7446052860111758,
+        "pr_auc": 0.9167966348852499,
+        "threshold": -0.4327508211135865
+    },
+    "Hybrid LSTM + Autoencoder + One-Class SVM": {
+        "accuracy": 0.2647214854111406,
+        "precision": 0.90625,
+        "recall": 0.020538243626062325,
+        "f1": 0.04016620498614958,
+        "roc_auc": 0.4865543903359306,
+        "pr_auc": 0.7760176086986692,
+        "threshold": 0.8906420258007423
+    },
+    "Hybrid LSTM + Autoencoder + Score-Level Ensemble (IF+LOF+OCSVM)": {
+        "accuracy": 0.3989389920424403,
+        "precision": 0.9826989619377162,
+        "recall": 0.20113314447592068,
+        "f1": 0.3339212228101117,
+        "roc_auc": 0.6176715438195114,
+        "pr_auc": 0.8624035028741304,
+        "threshold": 2.0423891540513375
+    }
+}

@@ -1,0 +1,22 @@
+[
+    {
+        "File Name": "100.mat",
+        "Total Windows Processed": 473,
+        "Normal Windows": 468,
+        "Anomaly Windows": 5,
+        "Anomaly Percentage (%)": 1.06,
+        "Mean Ensemble Score": 0.0119,
+        "Calibrated Threshold": 2.0424,
+        "Final Machine State Verdict": "NORMAL"
+    },
+    {
+        "File Name": "105.mat",
+        "Total Windows Processed": 117,
+        "Normal Windows": 84,
+        "Anomaly Windows": 33,
+        "Anomaly Percentage (%)": 28.21,
+        "Mean Ensemble Score": 1.2832,
+        "Calibrated Threshold": 2.0424,
+        "Final Machine State Verdict": "ANOMALY"
+    }
+]

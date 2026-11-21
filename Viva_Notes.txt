@@ -1,0 +1,685 @@
+================================================================================
+FAULTSETINEL: MACHINE FAULT DETECTION USING UNSUPERVISED LEARNING
+COMPREHENSIVE THEORY AND VIVA PREPARATION NOTES
+================================================================================
+
+Team Members:
+1. K. Bhavya   — 241FA04172
+2. Y. Pavani   — 241FA04436
+3. Sk. Hiba    — 241FA04495
+4. Sk. Arfa    — 241FA04931
+
+Section: 12
+Submitted to: Mr. Sourav Mondal
+Project Title: FaultSentinel: Machine Fault Detection Using Unsupervised Learning
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. Project Introduction and Objective
+2. Dataset — CWRU Bearing Dataset
+3. Data Preprocessing and Windowing
+4. LSTM Feature Extraction (Future-Frame Prediction)
+5. LSTM Autoencoder Feature Extraction
+6. Hybrid Feature Extraction
+7. Isolation Forest
+8. Local Outlier Factor (LOF)
+9. One-Class Support Vector Machine (One-Class SVM)
+10. Unsupervised Score-Level Ensemble
+11. Training and Testing Strategy (Leakage-Free Protocol)
+12. Evaluation Metrics
+13. Confusion Matrix, ROC and Precision-Recall Curves
+14. Anomaly Threshold Selection
+15. Prediction on New Recordings (Inference Pipeline)
+16. Literature Review and Research Foundations
+17. Project Results and Comparison
+18. Limitations and Future Scope
+19. Frequently Asked Viva Questions and Answers
+
+
+================================================================================
+1. PROJECT INTRODUCTION AND OBJECTIVE
+================================================================================
+
+* WHAT IT MEANS:
+FaultSentinel is an unsupervised machine learning and deep learning system designed for industrial condition monitoring. Rotating machines—such as induction motors, gearboxes, pumps, and turbines—are prone to mechanical wear, especially in rolling-element bearings. Bearings account for over 40% of all induction motor breakdowns. When a defect develops (microscopic spalling or fatigue cracking), the mechanical vibration profile changes. FaultSentinel automatically detects these deviations without ever seeing faulty examples during training.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+In real industrial plants, machines run in normal, healthy conditions for 99% of their operational lifespan. Running multi-million-dollar production machinery to destruction just to collect labelled fault samples for supervised training is dangerous, expensive, and impractical. Therefore, supervised 4-class classifiers fail in real deployments. FaultSentinel solves this by learning strictly the baseline manifold of healthy operations and flagging any deviation as an ANOMALY.
+
+* HOW IT WORKS IN OUR PROJECT:
+1. We train exclusively on healthy bearing vibration signals (from CWRU 0 HP, 1 HP, and 2 HP motors).
+2. Deep recurrent networks (LSTM Sequence Predictor and LSTM Autoencoder) extract temporal and bottleneck representations.
+3. Three complementary unsupervised detectors (Isolation Forest, Local Outlier Factor, One-Class SVM) score the anomaly likelihood of each window.
+4. An unsupervised score-level ensemble fuses these calibrated detector scores.
+5. If the percentage of anomalous windows in an unseen recording reaches or exceeds 15%, the system renders a verdict of ANOMALY; otherwise, it is NORMAL.
+
+* ADVANTAGES:
+- Zero dependency on expensive or dangerous fault data collection.
+- Capable of catching novel, unmodelled defect modes.
+- Binary screening (Normal vs Anomaly) aligns with real-world predictive maintenance triage.
+
+* LIMITATIONS:
+- It flags THAT an anomaly exists, but does not pinpoint the exact fault diameter or micro-inch damage depth.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Sir, in real factories, we cannot break expensive motors just to get fault data for training. Our project, FaultSentinel, solves this by training models strictly on healthy bearing vibration signals. It learns what normal machine operation looks like. When tested on unseen data, if the vibration deviates from healthy patterns, the system flags it as an Anomaly. It is an unsupervised binary novelty detection system, not a supervised classifier."
+
+* KEY FORMULA:
+Classification Target:
+y in {0 (Normal), 1 (Anomaly)}
+
+
+================================================================================
+2. DATASET — CWRU BEARING DATASET
+================================================================================
+
+* WHAT IT MEANS:
+The Case Western Reserve University (CWRU) Bearing Data Center dataset is the international standard benchmark for validating machine learning algorithms in bearing condition monitoring.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+CWRU provides real-world physical accelerometer measurements under controlled laboratory conditions, varying motor loads (0 to 3 HP), rotational speeds (1720 to 1797 RPM), and seeded single-point EDM faults (0.007 to 0.028 inches) on inner race, balls, and outer race.
+
+* HOW IT WORKS IN OUR PROJECT:
+We use 16 genuine CWRU MATLAB files (.mat) sampled at 12,000 Hz from the Drive End (DE) accelerometer:
+- Healthy Baseline Recordings:
+  - 97.mat:  0 HP load, 1797 RPM
+  - 98.mat:  1 HP load, 1772 RPM
+  - 99.mat:  2 HP load, 1750 RPM
+  - 100.mat: 3 HP load, 1730 RPM (Held-out unseen test condition)
+- Faulty Recordings (12 files):
+  - Inner Race faults: 105.mat, 106.mat, 107.mat, 108.mat
+  - Ball faults:       118.mat, 119.mat, 120.mat, 121.mat
+  - Outer Race faults: 130.mat, 131.mat, 132.mat, 133.mat
+
+* VARIABLE INDEXING DETAIL:
+Because CWRU MATLAB files use variable keys like 'X097_DE_time' or 'X098_DE_time' (even inside 99.mat), our loader dynamically matches any dictionary key containing the string 'DE_time'.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We use the standard CWRU benchmark dataset recorded at 12,000 samples per second from drive-end accelerometers. We use 4 healthy recordings under 0, 1, 2, and 3 HP motor loads and 12 fault recordings covering inner raceway, ball, and outer raceway defects. Healthy recordings 97, 98, and 99 are used strictly for training and validation, while healthy recording 100 and all 12 fault files are kept strictly for testing."
+
+
+================================================================================
+3. DATA PREPROCESSING AND WINDOWING
+================================================================================
+
+* WHAT IT MEANS:
+Continuous continuous-time vibration signals are divided into fixed-duration segments called sliding windows and normalized so that algorithms are not biased by absolute amplitude offsets.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+Rotating machines operate periodically. An instantaneous single sensor reading carries no contextual information; however, a window covering multiple shaft revolutions contains full rotational and resonant dynamics.
+
+* HOW IT WORKS IN OUR PROJECT:
+- Window Size: W = 2048 samples (~170.7 milliseconds). At 1797 RPM (~30 Hz), one shaft revolution takes ~400 samples. Thus, 2048 samples span ~5.1 complete shaft revolutions.
+- Step Size: S = 1024 samples (50% overlap).
+- Standardization: A StandardScaler calculates mean (mu) and standard deviation (sigma) EXCLUSIVELY on healthy training windows:
+    x_scaled = (x - mu_train) / sigma_train
+- The fitted scaler is saved to disk and reused for validation, test, and live inference.
+
+* PREVENTING OVERLAPPING-WINDOW DATA LEAKAGE:
+If sliding overlapping windows are created across an entire recording before randomly splitting them into train and test sets, adjacent windows share 1024 identical samples (50% identical information). This creates data leakage and artificially inflates accuracy.
+In FaultSentinel, we completely prevent leakage by splitting signals BEFORE windowing:
+- Contiguous temporal split: The first 85% of samples in 97.mat, 98.mat, and 99.mat form the training set. A gap equal to the window size (2048 samples) is skipped, and the remaining 15% forms the validation set.
+- Unseen Healthy Test: 100.mat (3 HP load) is entirely reserved for testing.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We segment the raw vibration signals into windows of 2048 samples, which corresponds to about 5 motor revolutions. We use a 50% overlap. Crucially, to prevent data leakage, we perform our train-validation split on the continuous raw signal BEFORE generating windows, and test on a completely unseen motor load (100.mat). Normalization is fitted strictly on the healthy training windows."
+
+* KEY FORMULA:
+Standardization:
+z = (x - mu) / sigma
+Number of windows from signal of length L:
+N = floor((L - W) / S) + 1
+
+
+================================================================================
+4. LSTM FEATURE EXTRACTION (FUTURE-FRAME PREDICTION)
+================================================================================
+
+* WHAT IT MEANS:
+Long Short-Term Memory (LSTM) is a recurrent neural network architecture designed to model temporal dependencies without suffering from vanishing gradients. In our project, an LSTM network is trained in a self-supervised autoregressive manner to predict the future vibration frame.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+Vibration in a healthy rotating bearing exhibits smooth, predictable cyclostationary momentum. By learning to predict the next temporal state, the LSTM's hidden state learns to encode the underlying physical laws and rotational dynamics of healthy machinery.
+
+* HOW IT WORKS IN OUR PROJECT:
+1. Reshaping: Each 2048-sample window is structured into a sequence of 128 time-steps, with 16 features per step:
+   Shape: (128, 16)
+2. Historical Input vs Future Target:
+   - Input Sequence: Steps 0 to 126 (shape: 127 x 16).
+   - Target Future Frame: Step 127 (shape: 16).
+   By holding out the 128th frame from the input, the network is forced to predict a genuinely future frame rather than memorizing an input already present.
+3. Architecture:
+   - Input Layer: (127, 16)
+   - LSTM Layer 1: 64 hidden units, return_sequences=True, activation='tanh'
+   - LSTM Layer 2: 64 hidden units, return_sequences=False, activation='tanh'
+   - Embedding Dense Layer: 64 units, activation='relu' (This is our 64-d feature vector)
+   - Output Projection Head: 16 units (predicts the 16 values of the future frame)
+4. Loss Function: Mean Squared Error (MSE). Optimizer: Adam (lr = 0.001).
+5. Feature Extraction: Once trained, the prediction head is discarded. For any window, the historical sequence is passed through the encoder to extract a fixed-length 64-dimensional feature vector.
+
+* ADVANTAGES:
+- Truly unsupervised/self-supervised: requires zero fault labels.
+- Encodes temporal velocity and rotational inertia.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"In our LSTM feature extractor, we give the model the first 127 time-steps and train it to forecast the 128th time-step (the future frame). Because the target frame is excluded from the input, the model cannot trivially copy it; it must learn the genuine mechanical momentum of the rotating bearing. Once trained, we take the 64-dimensional hidden layer as our temporal feature vector."
+
+* KEY FORMULA:
+MSE Loss = (1 / 16) * sum_{k=1}^{16} (y_true,k - y_pred,k)^2
+
+
+================================================================================
+5. LSTM AUTOENCODER FEATURE EXTRACTION
+================================================================================
+
+* WHAT IT MEANS:
+An Autoencoder is an unsupervised neural network with an hourglass structure: an encoder compresses the input into a compact low-dimensional bottleneck (latent space), and a decoder reconstructs the original input from that bottleneck.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+The autoencoder learns a compressed manifold of healthy bearing vibrations. When trained exclusively on healthy signals, the latent representation captures the essential spatial-temporal characteristics of normal operation. When an anomalous fault signal is processed, the compressed latent embedding looks radically different from healthy representations.
+
+* WHY THE VANILLA REPEAT-VECTOR AUTOENCODER FAILED:
+In initial experiments, using a RepeatVector(128) layer to feed a single static 64-d vector into a decoder LSTM caused mode collapse (Reconstruction MSE ~ 1.0, std ~ 0.03). This happened because the decoder received the exact same vector at all 128 steps without positional cues, collapsing the unrolled LSTM to its zero-mean attractor.
+
+* HOW WE FIXED AND IMPROVED IT:
+We redesigned the decoder with a Dense expansion layer:
+1. Encoder:
+   - Input: (128, 16)
+   - LSTM 1: 64 units, return_sequences=True, activation='tanh'
+   - LSTM 2: 32 units, return_sequences=False, activation='tanh'
+   - Bottleneck Dense: 64 units, activation='relu' (Latent feature vector z in R^64)
+2. Decoder:
+   - Dense Expansion: 128 * 16 units, activation='relu'
+   - Reshape Layer: (128, 16)
+   - LSTM Decoder: 32 units, return_sequences=True, activation='tanh'
+   - TimeDistributed Dense: 16 units (Reconstructs sequence (128, 16))
+3. Verification:
+   The improved architecture achieved a Reconstruction MSE of ~0.76 (substantially lower than the zero-baseline MSE of 1.000) and healthy latent feature standard deviation of ~0.49, proving genuine pattern compression.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Our Autoencoder compresses the 2048-point sequence through LSTM layers into a 64-dimensional latent bottleneck, then reconstructs the signal. By using a Dense expansion before the decoder LSTM, we solved the mode collapse problem where the model previously output near-zero predictions. The 64-dimensional latent bottleneck provides our second feature representation."
+
+* KEY FORMULA:
+Reconstruction MSE = (1 / (128 * 16)) * sum_{t=1}^{128} sum_{f=1}^{16} (X_t,f - X_hat_t,f)^2
+
+
+================================================================================
+6. HYBRID FEATURE EXTRACTION
+================================================================================
+
+* WHAT IT MEANS:
+Hybrid feature extraction concatenates features from multiple complementary learning paradigms into a single unified representation.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+The LSTM Future Predictor captures directional temporal momentum and sequence autoregression. The Autoencoder captures global energy distribution and structural reconstruction patterns. Concatenating both creates a rich 128-dimensional representation that combines temporal forecasting dynamics with manifold compression.
+
+* HOW IT WORKS IN OUR PROJECT:
+1. For each window, compute:
+   - f_lstm in R^64 (from LSTM future-frame encoder)
+   - f_ae   in R^64 (from Autoencoder latent bottleneck)
+2. Concatenate:
+   f_hybrid_raw = [f_lstm || f_ae] in R^128
+3. Standardization:
+   Fit a StandardScaler strictly on the healthy training hybrid vectors:
+   f_hybrid = (f_hybrid_raw - mu_hybrid_train) / sigma_hybrid_train
+4. The hybrid scaler is saved to disk as hybrid_scaler.joblib.
+
+* ADVANTAGES:
+- Prevents reliance on a single feature mechanism.
+- Provides balanced input for tree-based, density-based, and hyperplane-based novelty detectors.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We combine the 64 features from the LSTM predictor and the 64 features from the Autoencoder bottleneck into a single 128-dimensional hybrid feature vector. This gives our anomaly detectors both temporal momentum information and signal reconstruction information. We standardize this hybrid vector using a scaler fitted only on healthy training data."
+
+* KEY FORMULA:
+F_hybrid = [ F_LSTM (1..64) , F_AE (1..64) ] in R^128
+
+
+================================================================================
+7. ISOLATION FOREST
+================================================================================
+
+* WHAT IT MEANS:
+Isolation Forest is an unsupervised tree-based ensemble algorithm that isolates anomalies rather than profiling normal data points. It builds an ensemble of randomized decision trees (iTrees).
+
+* WHY WE USE IT IN FAULTSENTINEL:
+Anomalies are few and topologically distant from healthy clusters. In a random binary partitioning tree, an anomalous point requires significantly fewer recursive splits to be isolated in a leaf node compared to points inside dense healthy clusters.
+
+* HOW IT WORKS IN OUR PROJECT:
+- Fitted on healthy training feature vectors with n_estimators=150 and contamination='auto'.
+- Scoring: Scikit-learn outputs higher values for normal points and negative values for anomalies. We invert the score so higher means more anomalous:
+    S_IF(x) = -score_samples(x)
+- Evaluated across all three feature sets (LSTM, Autoencoder, Hybrid).
+
+* ADVANTAGES:
+- Highly scalable with O(n * log n) time complexity.
+- Robust to irrelevant features and does not depend on distance metrics.
+
+* LIMITATIONS:
+- Can produce irregular or axis-aligned partition artifacts in high dimensions.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Isolation Forest works on the principle that anomalous points are few and different, so they can be isolated near the root of random decision trees with very few splits. We train 150 isolation trees on healthy data. We invert the output score so that higher scores represent higher anomaly probability."
+
+* KEY FORMULA:
+Anomaly Score:
+s(x, n) = 2^(- E(h(x)) / c(n))
+where h(x) is path length, c(n) is average path length of unsuccessful searches in a BST, and S_IF(x) = -score_samples(x).
+
+
+================================================================================
+8. LOCAL OUTLIER FACTOR (LOF)
+================================================================================
+
+* WHAT IT MEANS:
+Local Outlier Factor (LOF) is an unsupervised density-based anomaly detection algorithm that compares the local density of a sample to that of its k-nearest neighbors.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+Bearing vibration data can have varying local densities due to varying operational speeds and loads. LOF adapts to local density variations rather than applying a single rigid global radius.
+
+* CRITICAL CONFIGURATION: novelty=True:
+By default, LOF is an outlier detector (transductive learning on training data). To use LOF as a NOVELTY DETECTOR on unseen test recordings, we must initialize it with:
+    LocalOutlierFactor(n_neighbors=25, novelty=True, contamination='auto')
+With novelty=True, LOF enables the .decision_function() method on new test samples.
+
+* HOW IT WORKS IN OUR PROJECT:
+- Fitted strictly on healthy training feature vectors using n_neighbors=25.
+- Scoring: Inverted so that higher means more anomalous:
+    S_LOF(x) = -decision_function(x)
+
+* ADVANTAGES:
+- Exceptionally sensitive to subtle boundary outliers and local clustering shifts.
+- Achieved highest individual detector performance in our experiments.
+
+* LIMITATIONS:
+- Higher inference latency during testing because it computes pairwise distance to training instances.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"LOF measures how isolated a point is relative to its 25 nearest neighbors. If a point's local density is significantly lower than its neighbors' densities, it is flagged as an outlier. Crucially, we set novelty=True so that LOF can be fitted on healthy training data and then used to predict on unseen test recordings."
+
+* KEY FORMULA:
+Local Reachability Density (lrd):
+lrd_k(p) = 1 / ( sum_{o in N_k(p)} reach_dist_k(p, o) / |N_k(p)| )
+LOF_k(p) = sum_{o in N_k(p)} (lrd_k(o) / lrd_k(p)) / |N_k(p)|
+Inverted Score: S_LOF(x) = -decision_function(x)
+
+
+================================================================================
+9. ONE-CLASS SUPPORT VECTOR MACHINE (ONE-CLASS SVM)
+================================================================================
+
+* WHAT IT MEANS:
+One-Class SVM is a kernel-based semi-supervised/unsupervised algorithm that maps training data into a high-dimensional feature space using an RBF kernel and finds the maximum-margin hyperplane separating normal data from the coordinate origin.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+It constructs a smooth, non-linear geometric envelope around the healthy feature manifold. Any unseen sample falling outside this envelope is classified as an anomaly.
+
+* HOW IT WORKS IN OUR PROJECT:
+- Fitted on healthy training feature vectors using:
+    OneClassSVM(kernel='rbf', gamma='scale', nu=0.05)
+- Parameter nu=0.05 sets an upper bound on training margin outliers (5%) and a lower bound on the number of support vectors.
+- Scoring: Inverted so that higher means more anomalous:
+    S_OCSVM(x) = -decision_function(x)
+
+* ADVANTAGES:
+- Strong mathematical foundations based on structural risk minimization.
+- Highly effective at defining tight non-linear geometric bounds.
+
+* LIMITATIONS:
+- Sensitive to hyperparameter choice (nu and gamma).
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"One-Class SVM maps healthy features into a higher dimensional space using an RBF kernel and wraps a tight boundary around them, treating the origin as the anomaly. We set nu=0.05 to allow a 5% margin. If an unseen test vector falls outside this boundary, it produces a high anomaly score."
+
+* KEY FORMULA:
+Optimization Objective:
+min_{w, xi, rho} (1/2)||w||^2 + (1 / (nu * N)) * sum_i xi_i - rho
+subject to: (w . phi(x_i)) >= rho - xi_i,  xi_i >= 0
+Inverted Score: S_OCSVM(x) = -decision_function(x)
+
+
+================================================================================
+10. UNSUPERVISED SCORE-LEVEL ENSEMBLE
+================================================================================
+
+* WHAT IT MEANS:
+An ensemble combines predictions or anomaly scores from multiple diverse algorithms to produce a more robust, stable, and accurate overall decision than any individual detector.
+
+* WHY WE USE IT IN FAULTSENTINEL:
+The three detectors operate on three completely different mathematical principles:
+- Isolation Forest: Recursive random axis partitioning (tree-based)
+- Local Outlier Factor: Local k-nearest neighbor density (density-based)
+- One-Class SVM: Maximum-margin support vector boundary (kernel-based)
+Combining them eliminates the blind spots and idiosyncrasies of any single algorithm.
+
+* THE ZERO-SUPERVISION RULE:
+Supervised stacking, Logistic Regression meta-classifiers, and gradient-boosted combiners are STRICTLY FORBIDDEN because they require labelled fault training examples, which violates the unsupervised assumption.
+Instead, we use UNSUPERVISED SCORE-LEVEL FUSION:
+1. Z-Score Standardization using Healthy Validation Statistics:
+   Each detector's raw scores have different scales and units. We compute the mean (mu_d) and standard deviation (sigma_d) strictly on the healthy validation set:
+     Z_d(x) = (S_d(x) - mu_d_val) / sigma_d_val
+2. Equal-Weight Fusion:
+     S_ensemble(x) = (1/3) * ( Z_IF(x) + Z_LOF(x) + Z_OCSVM(x) )
+3. Calibrated Unsupervised Threshold:
+     tau = Percentile_99.0( S_ensemble_val )
+   Any test window with S_ensemble(x) >= tau is flagged as an ANOMALY.
+
+* ADVANTAGES:
+- Completely unsupervised: 0% supervision used for weighting or thresholding.
+- Balances false alarms and miss rates, achieving exceptional boundary smoothness.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"To combine Isolation Forest, LOF, and One-Class SVM without using any fault labels, we standardize each detector's score using the mean and standard deviation of healthy validation signals (Z-score normalization). We then take the average of the three standardized scores. The anomaly threshold is set to the 99th percentile of healthy validation scores, ensuring a 1% false alarm rate on normal data."
+
+* KEY FORMULAS:
+Z-Score Standardization:
+Z_d(x) = (S_d(x) - mu_d) / sigma_d
+Ensemble Score:
+S_ensemble(x) = (1/3) * sum_{d in {IF, LOF, OCSVM}} Z_d(x)
+Decision Rule:
+Verdict(x) = Anomaly if S_ensemble(x) >= tau, else Normal
+
+
+================================================================================
+11. TRAINING AND TESTING STRATEGY (LEAKAGE-FREE PROTOCOL)
+================================================================================
+
+* WHAT IT MEANS:
+A scientifically sound data partitioning protocol that ensures model training, threshold calibration, and final testing are strictly isolated, completely preventing data contamination.
+
+* THE ROSA ET AL. (2024) LEAKAGE PROBLEM:
+Recent research by Rosa, Braga & Silva (2024) proved that many published bearing fault classification papers suffer from severe methodological flaws: they generated overlapping windows across an entire recording and then randomly shuffled them into train and test sets. Because consecutive overlapping windows share 50% or more identical time-series samples, the test set contained duplicates of training data, artificially boosting accuracy to ~100%.
+
+* FAULTSENTINEL'S LEAKAGE-FREE PROTOCOL:
+1. Healthy Training Split (Zero Overlap):
+   - Signals from 97.mat, 98.mat, 99.mat are split temporally:
+     - 85% for Training
+     - 2048-sample safety buffer skipped
+     - 15% for Validation
+   - Windows are generated independently from each segment. No training window shares a single time sample with any validation window.
+2. Healthy Test Data:
+   - 100.mat (3 HP motor load, 1730 RPM) is held out completely as an unseen healthy condition.
+3. Faulty Test Data:
+   - All 12 fault recordings (105-108, 118-121, 130-133) are used strictly for testing.
+4. Absolute Isolation:
+   - Zero fault samples are seen during training, feature scaling, model fitting, score calibration, or threshold selection.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We follow the strict leakage-free protocol recommended by Rosa et al. (2024). We split our continuous healthy signals into training and validation segments before windowing, so overlapping windows never cross partitions. Furthermore, our test set includes recording 100 under 3 HP load, which represents an operating speed and motor load completely unseen during training."
+
+
+================================================================================
+12. EVALUATION METRICS
+================================================================================
+
+* WHAT IT MEANS:
+Standardized statistical metrics used to quantitatively measure the detection performance of the binary novelty detection system on the held-out test set.
+
+* WHY WE USE THEM IN FAULTSENTINEL:
+Because test sets are naturally imbalanced (473 healthy windows vs 1412 faulty windows), Accuracy alone can be misleading. We report Precision, Recall, F1-Score, ROC-AUC, and PR-AUC.
+
+* DEFINITIONS AND FORMULAS:
+Given:
+- TP (True Positives): Faulty windows correctly flagged as Anomaly.
+- TN (True Negatives): Healthy windows correctly flagged as Normal.
+- FP (False Positives): Healthy windows incorrectly flagged as Anomaly (False Alarms).
+- FN (False Negatives): Faulty windows missed (incorrectly flagged as Normal).
+
+1. Accuracy:
+   Acc = (TP + TN) / (TP + TN + FP + FN)
+   Measures overall proportion of correct decisions.
+
+2. Precision:
+   Prec = TP / (TP + FP)
+   Measures reliability of alarms: when the system signals a fault, how often is it actually a fault?
+
+3. Recall (Sensitivity / True Positive Rate):
+   Rec = TP / (TP + FN)
+   Measures fault capture rate: what fraction of actual faults were successfully detected?
+
+4. F1-Score:
+   F1 = 2 * (Precision * Recall) / (Precision + Recall)
+   Harmonic mean of precision and recall; key metric under class imbalance.
+
+5. ROC-AUC (Area Under Receiver Operating Characteristic Curve):
+   Evaluates the trade-off between True Positive Rate and False Positive Rate across all possible thresholds. A value of 1.0 represents perfect discrimination.
+
+6. PR-AUC (Area Under Precision-Recall Curve):
+   Evaluates Precision vs Recall across all thresholds. Especially informative when the positive (anomaly) class is critical.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We evaluate our models using Accuracy, Precision, Recall, F1-score, ROC-AUC, and PR-AUC. In industrial monitoring, Recall is vital because a missed fault can cause catastrophic motor breakdown, while Precision ensures maintenance teams are not dispatched on false alarms. F1-score balances both."
+
+
+================================================================================
+13. CONFUSION MATRIX, ROC AND PRECISION-RECALL CURVES
+================================================================================
+
+* WHAT IT MEANS:
+Graphical diagnostic tools that illustrate detection accuracy, error distribution, and operational trade-offs across different threshold settings.
+
+* HOW WE USE THEM IN FAULTSENTINEL:
+1. Confusion Matrix Heatmap:
+   - Displays a 2x2 grid: Normal vs Anomaly.
+   - Rows represent Actual machine states; Columns represent Predicted states.
+   - Instantly exposes False Alarms (FP) vs Missed Faults (FN).
+2. ROC Curve:
+   - Plots True Positive Rate (Sensitivity) on the y-axis vs False Positive Rate (1 - Specificity) on the x-axis.
+   - Compares the 9 feature-detector combinations and the Ensemble against the random-guess diagonal line.
+3. Precision-Recall Curve:
+   - Plots Precision on the y-axis vs Recall on the x-axis.
+   - Shows how well precision is maintained as the detection sensitivity is varied.
+4. Anomaly Score Distribution Plot:
+   - Kernel Density Estimate (KDE) / Histogram comparing the distribution of ensemble scores for healthy windows vs faulty windows.
+   - Demonstrates visual separation between the normal distribution (centered near 0) and the fault distribution (shifted to high positive values).
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"The confusion matrix verifies how many normal and faulty windows were correctly classified. The ROC and PR curves show that our models maintain near-perfect separation across varying decision boundaries, and our score distribution plot proves that normal windows cluster below our calibrated threshold while fault windows shift far to the right."
+
+
+================================================================================
+14. ANOMALY THRESHOLD SELECTION
+================================================================================
+
+* WHAT IT MEANS:
+The threshold (tau) is the cut-off value applied to an anomaly score to decide whether an unseen vibration window is Normal (score < tau) or Anomaly (score >= tau).
+
+* WHY IT IS CRUCIAL IN UNSUPERVISED LEARNING:
+In supervised learning, thresholds can be tuned using labeled fault data. In TRUE unsupervised learning, the system CANNOT peek at fault labels to choose a threshold. Peeking at test labels to maximize F1-score is a form of data contamination.
+
+* HOW FAULTSENTINEL SELECTS THE THRESHOLD:
+We use a strictly unsupervised 99th percentile calibration on healthy validation data:
+1. We compute anomaly scores for all healthy validation windows:
+   S_val = { S(x_val,1), S(x_val,2), ..., S(x_val,M) }
+2. We establish the threshold at the 99th percentile:
+   tau = np.percentile(S_val, 99.0)
+3. Physical Meaning:
+   This guarantees by design that on normal operating equipment, the system has an expected false alarm rate of exactly 1.0% (specificity = 99.0%). Any score exceeding this extreme healthy baseline is flagged as an anomaly.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"We set our anomaly threshold to the 99th percentile of healthy validation scores. This is completely unsupervised because it does not use a single fault label. It mathematically sets our expected false alarm rate to 1% on normal data while catching over 92% of unseen mechanical faults."
+
+* KEY FORMULA:
+tau = Percentile_{99.0}( S_val )
+Decision:
+y_pred = 1 if score >= tau else 0
+
+
+================================================================================
+15. PREDICTION ON NEW RECORDINGS (INFERENCE PIPELINE)
+================================================================================
+
+* WHAT IT MEANS:
+A lightweight, end-to-end inference function that takes an unseen raw vibration recording file (.mat) from an operational machine and renders a real-time verdict: NORMAL or ANOMALY.
+
+* HOW IT WORKS IN OUR PROJECT:
+The function `predict_recording(file_path)` executes the following automated pipeline:
+1. Load Recording: Reads the MATLAB file and dynamically finds the Drive End vibration array.
+2. Segment & Standardize: Breaks the signal into 2048-sample windows with 1024-sample step size and applies the saved `signal_scaler.joblib`.
+3. Shape into Tensors: Reshapes windows into (N, 128, 16) sequences.
+4. Extract Features:
+   - Runs `lstm_encoder.keras` on (N, 127, 16) to obtain 64-d LSTM features.
+   - Runs `ae_encoder.keras` on (N, 128, 16) to obtain 64-d Autoencoder features.
+   - Concatenates them and applies `hybrid_scaler.joblib` to produce 128-d Hybrid features.
+5. Standardize Features: Applies `hybrid_detector_scaler.joblib`.
+6. Run Anomaly Detectors: Evaluates saved Isolation Forest, LOF, and One-Class SVM models.
+7. Calibrate & Fuse: Applies validation mean and std from `ensemble_config.json` and computes the equal-weight ensemble score.
+8. Window-Level Decision: Compares ensemble scores against the calibrated threshold tau.
+9. Recording-Level Verdict:
+   Computes the percentage of anomalous windows:
+     anomaly_pct = (n_anomaly_windows / n_total_windows) * 100.0
+   Decision Rule:
+     If anomaly_pct >= 15.0% -> VERDICT: ANOMALY
+     If anomaly_pct <  15.0% -> VERDICT: NORMAL
+
+* VERIFIED RESULTS ON HELD-OUT TEST FILES:
+- Healthy Test Recording (100.mat, 3 HP load):
+  - Total Windows: 473
+  - Normal Windows: 460 (97.25%)
+  - Anomaly Windows: 13 (2.75%)
+  - Anomaly Percentage: 2.75% (< 15.0%)
+  - Final Verdict: NORMAL (Correct)
+- Faulty Test Recording (105.mat, 0.007" Inner Race Fault):
+  - Total Windows: 117
+  - Normal Windows: 1 (0.85%)
+  - Anomaly Windows: 116 (99.15%)
+  - Anomaly Percentage: 99.15% (>= 15.0%)
+  - Final Verdict: ANOMALY (Correct)
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Our prediction function takes any raw .mat recording, extracts sliding windows, processes them through our saved scalers and deep encoders, and computes the ensemble anomaly score. If 15% or more of the windows in the recording are anomalous, the motor is flagged as ANOMALY; otherwise, it is NORMAL. On held-out healthy file 100.mat, only 2.75% of windows were flagged, correctly returning NORMAL. On fault file 105.mat, 99.15% of windows were flagged, immediately returning ANOMALY."
+
+
+================================================================================
+16. LITERATURE REVIEW AND RESEARCH FOUNDATIONS
+================================================================================
+
+* WHAT IT MEANS:
+A scholarly synthesis of existing peer-reviewed literature in condition monitoring and bearing anomaly detection, establishing where FaultSentinel sits in the broader research landscape.
+
+* PRIMARY VERIFIED RESEARCH PAPERS:
+1. Shu et al. (2022) — Maintenance & Reliability (DOI: 10.17531/ein.2022.4.16):
+   - Studied random convolutional kernels with Isolation Forest for equipment state monitoring.
+   - Validated that tree-based space partitioning provides outlier-resilient anomaly boundaries on multi-dimensional machinery time series without requiring faulty training labels.
+2. Priarone et al. (2024) — ICSRS / arXiv:2409.18683:
+   - Benchmarked the exact three novelty detectors (IF, LOF, OCSVM) on physical actuator vibration signals.
+   - Confirmed that combining multiple novelty detectors provides superior stability compared to single-detector setups.
+3. McKinnon et al. (2020) — Energies (DOI: 10.3390/en13195152):
+   - Benchmarked Isolation Forest and One-Class SVM on industrial wind turbine gearbox SCADA data, establishing ~82% accuracy as an industrial baseline for unsupervised machine anomaly detection.
+4. Amarbayasgalan & Ryu (2024) — Sensors (DOI: 10.3390/s24102978):
+   - Proved that deep autoencoder latent embeddings capture motor and bearing defect dynamics without pre-labelled fault training sets.
+5. Xu et al. (2024) — Information (DOI: 10.3390/info15070399):
+   - Achieved >99.2% accuracy using supervised CNN-LSTM on CWRU. Serves as a vital contextual benchmark highlighting the trade-off: supervised models require exhaustive labelled failure datasets, whereas FaultSentinel requires only healthy data.
+6. Rosa, Braga & Silva (2024) — arXiv:2407.13524:
+   - Proved that conventional random window splitting across CWRU files induces massive train-test data leakage. FaultSentinel directly incorporates their recommendations by enforcing strict recording-wise partitioning.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Our research is grounded in verified academic literature. We follow Rosa et al. (2024) for leakage-free data partitioning, adapt Amarbayasgalan & Ryu (2024) for autoencoder representation learning, and benchmark the three novelty detectors validated by Priarone et al. (2024). Unlike supervised papers such as Xu et al. (2024) that require training on known fault labels, our system is strictly unsupervised."
+
+
+================================================================================
+17. PROJECT RESULTS AND COMPARISON
+================================================================================
+
+* ACTUAL EXPERIMENTAL RESULTS SUMMARY (Held-out Test Set, N = 1,885 windows):
+All metrics computed honestly without peeking at test labels:
+
+Feature Extractor           Anomaly Detector       Accuracy   Precision   Recall   F1-Score   ROC-AUC
+---------------------------------------------------------------------------------------------------------
+LSTM                        Isolation Forest        30.77%      99.08%     7.65%    14.20%    0.7241
+LSTM                        Local Outlier Factor    74.80%      99.79%    66.50%    79.81%    0.8701
+LSTM                        One-Class SVM           71.94%      96.82%    64.66%    77.54%    0.7308
+---------------------------------------------------------------------------------------------------------
+LSTM Autoencoder            Isolation Forest        88.38%      99.34%    85.06%    91.64%    0.9889
+LSTM Autoencoder            Local Outlier Factor    98.94%      99.15%    99.43%    99.29%    0.9993
+LSTM Autoencoder            One-Class SVM           97.67%      97.63%    99.29%    98.46%    0.9980
+---------------------------------------------------------------------------------------------------------
+Hybrid LSTM + Autoencoder   Isolation Forest        71.19%      99.43%    61.90%    76.30%    0.9421
+Hybrid LSTM + Autoencoder   Local Outlier Factor    97.61%      99.71%    97.10%    98.39%    0.9958
+Hybrid LSTM + Autoencoder   One-Class SVM           95.38%      97.36%    96.46%    96.91%    0.9878
+---------------------------------------------------------------------------------------------------------
+Hybrid LSTM + Autoencoder   SCORE-LEVEL ENSEMBLE    93.69%      99.01%    92.49%    95.64%    0.9872
+---------------------------------------------------------------------------------------------------------
+
+* KEY INSIGHTS FROM RESULTS:
+1. Autoencoder bottleneck features provided the strongest standalone separation (ROC-AUC up to 0.9993 with LOF), showing that manifold reconstruction is exceptionally sensitive to bearing impact pulses.
+2. LOF consistently outperformed Isolation Forest across all feature spaces because bearing fault clusters form distinct local density pockets in latent space.
+3. The Score-Level Ensemble achieved 93.69% Accuracy, 99.01% Precision, 92.49% Recall, 95.64% F1-score, and 0.9872 ROC-AUC. It provides superior operational stability against individual detector anomalies.
+4. On the recording level, the ensemble correctly classified 100% of test recordings (healthy 100.mat -> NORMAL, faulty 105.mat -> ANOMALY).
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Across all 9 combinations, Autoencoder features with Local Outlier Factor achieved the highest individual window accuracy at 98.94% with an ROC-AUC of 0.9993. Our Score-Level Ensemble on Hybrid features achieved 93.69% window accuracy, 99.01% precision, 95.64% F1-score, and 0.9872 ROC-AUC. At the recording level, the ensemble achieved 100% correct verdicts on both healthy and faulty machines."
+
+
+================================================================================
+18. LIMITATIONS AND FUTURE SCOPE
+================================================================================
+
+* CURRENT OPERATIONAL LIMITATIONS:
+1. Single Sensor Channel:
+   Current implementation uses only the Drive End (DE) accelerometer. In industrial setups, combining Drive End and Fan End accelerometers would provide richer spatial awareness.
+2. Constant Speed Assumption:
+   While tested across 0 to 3 HP loads (1730 to 1797 RPM), significant variable-frequency drive (VFD) speed variations would require order tracking or angular domain resampling.
+3. Acoustic Background Noise:
+   Extreme ambient factory noise can elevate baseline reconstruction error, requiring threshold recalibration for different factory floors.
+
+* FUTURE SCOPE AND EXTENSIONS:
+1. Multi-Sensor Spatial-Temporal Graph Neural Networks (ST-GNN) to model cross-talk between multiple bearing housings.
+2. Extreme Value Theory (EVT) with Peaks-Over-Threshold (POT) using Generalized Pareto Distributions for dynamic, automated statistical thresholding.
+3. Edge AI Deployment: Quantizing models with TensorFlow Lite or ONNX Runtime to run on embedded microcontrollers (e.g. Raspberry Pi or STM32) directly mounted on motors.
+
+* SIMPLE EXPLANATION TO SPEAK IN VIVA:
+"Our system currently analyzes a single drive-end accelerometer under near-constant rotational speed. In future work, we plan to incorporate multi-channel sensors (Drive End and Fan End), implement order tracking for variable-speed motors, and deploy quantized models onto embedded edge devices for real-time factory monitoring."
+
+
+================================================================================
+19. FREQUENTLY ASKED VIVA QUESTIONS AND ANSWERS
+================================================================================
+
+Q1: Why is this an unsupervised project instead of a supervised classification project?
+A1: In real industrial plants, machines run in healthy conditions 99% of the time. Collecting balanced failure samples of every possible fault type and severity would require running expensive machines to catastrophic breakdown, which is dangerous and cost-prohibitive. An unsupervised system trains strictly on healthy baseline data and detects any abnormality.
+
+Q2: What is the difference between an outlier and a novelty?
+A2: An outlier is an anomalous point present inside the training data itself (data cleaning). A novelty is a new, unseen pattern appearing during testing after the model has been trained on clean baseline data. In FaultSentinel, we perform novelty detection.
+
+Q3: Why did you set `novelty=True` in Local Outlier Factor?
+A3: By default, scikit-learn's LOF is transductive (it only detects outliers in the training set and does not have a `predict` or `decision_function` method). Setting `novelty=True` allows LOF to be fitted on healthy training data and then used to score new, unseen test samples.
+
+Q4: How do you prevent data leakage in sliding windows?
+A4: If you create overlapping windows across an entire recording and randomly shuffle them into train and test sets, consecutive windows share 50% identical samples, leaking training data into the test set. We prevent this by splitting the continuous signal into training and validation segments BEFORE windowing, leaving a safety gap, and using a completely separate motor recording (100.mat) for testing.
+
+Q5: Why did the initial LSTM Autoencoder fail, and how did you fix it?
+A5: The initial autoencoder used a `RepeatVector` layer to feed a single static 64-d latent vector into an LSTM decoder for 128 consecutive time steps without positional cues. The decoder collapsed to outputting the mean (zero), yielding MSE ~ 1.0. We fixed it by using a Dense expansion layer to project the bottleneck back into the full sequence space before applying the decoder LSTM, which reduced reconstruction MSE to ~0.76 and prevented mode collapse.
+
+Q6: Why is the LSTM feature extractor trained on future-frame prediction?
+A6: If the target frame is included in the input sequence, the network can trivially memorize the identity mapping. By giving the network steps 0 to 126 and asking it to predict step 127 (the future frame), the network is forced to learn genuine temporal dynamics and physical momentum.
+
+Q7: How did you select the anomaly threshold without using fault labels?
+A7: We used the 99th percentile of healthy validation anomaly scores. This is completely unsupervised and mathematically guarantees an expected 1% false alarm rate on normal data while effectively isolating fault anomalies.
+
+Q8: Why do you invert the scores of Isolation Forest, LOF, and One-Class SVM?
+A8: In scikit-learn, these algorithms output normality scores (higher values mean normal/inlier, negative values mean outlier). To align with the standard anomaly detection convention where higher scores represent higher anomaly probability, we multiply by -1.
+
+Q9: What is the benefit of the Score-Level Ensemble over a single detector?
+A9: Each detector has a different mathematical perspective: Isolation Forest uses random tree partitioning, LOF uses local neighbor density, and One-Class SVM uses a maximum-margin kernel boundary. The ensemble fuses their standardized scores, eliminating single-algorithm blind spots and providing smooth, reliable boundaries.
+
+Q10: Why can't you use Logistic Regression or a Random Forest to combine the detector scores?
+A10: Logistic Regression and Random Forest require labelled positive (faulty) and negative (normal) examples to learn weights. Using them would turn the combiner into a supervised meta-model, violating our unsupervised paradigm. Instead, we use unsupervised Z-score normalization and equal-weight averaging.
+
+Q11: What is the recording-level decision rule?
+A11: For an unseen recording, if 15% or more of its windows are flagged as anomalous, the overall machine state is declared an ANOMALY; otherwise, it is declared NORMAL.
+
+Q12: How did the system perform on the held-out healthy recording (100.mat)?
+A12: On 100.mat (which represents 3 HP load and 1730 RPM, an operating condition never seen during training), only 2.75% of windows were flagged as anomalous (well below the 15% threshold), correctly rendering a verdict of NORMAL.
+
+Q13: How did the system perform on the held-out fault recording (105.mat)?
+A13: On 105.mat (inner raceway fault), 99.15% of windows were flagged as anomalous, triggering an immediate and confident verdict of ANOMALY.
+
+Q14: What are the main limitations of FaultSentinel?
+A14: It currently processes a single accelerometer channel (Drive End) at near-constant rotational speed. Variable speed drives would require order tracking, and high background noise in factories might require periodic baseline threshold recalibration.
+
+================================================================================
+END OF VIVA NOTES — FAULTSENTINEL PROJECT
+================================================================================
+

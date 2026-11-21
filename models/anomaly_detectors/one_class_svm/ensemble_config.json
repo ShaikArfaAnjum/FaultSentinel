@@ -1,0 +1,24 @@
+{
+    "feature_set": "Hybrid LSTM + Autoencoder",
+    "detector_keys": [
+        "Hybrid LSTM + Autoencoder___Isolation Forest",
+        "Hybrid LSTM + Autoencoder___Local Outlier Factor",
+        "Hybrid LSTM + Autoencoder___One-Class SVM"
+    ],
+    "calibration": {
+        "Hybrid LSTM + Autoencoder___Isolation Forest": {
+            "mean": 0.46643571404689405,
+            "std": 0.02266724484495802
+        },
+        "Hybrid LSTM + Autoencoder___Local Outlier Factor": {
+            "mean": -0.4861734211444855,
+            "std": 0.023295145481824875
+        },
+        "Hybrid LSTM + Autoencoder___One-Class SVM": {
+            "mean": -0.9845067010365129,
+            "std": 0.8517770328728519
+        }
+    },
+    "threshold": 2.0423891540513375,
+    "fusion_strategy": "equal_weight_standardized_mean"
+}

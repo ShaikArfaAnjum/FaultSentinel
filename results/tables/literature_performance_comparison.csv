@@ -1,0 +1,7 @@
+Paper and Year,Dataset,Method,Learning Paradigm,Accuracy,ROC-AUC,FaultSentinel,Comparison Type,Notes
+Shu et al. (2022),Equipment SCADA,Random Conv Kernel + Isolation Forest,Unsupervised,89.4%,0.9310,"Acc: 39.9%, ROC: 0.6177",Partially Comparable,Tree anomaly detection on industrial time series without fault labels.
+Priarone et al. (2024),Actuator Vibration,Wavelet + Novelty Detection (IF/LOF/OCSVM),Unsupervised,86.2%,0.9150,"Acc: 39.9%, ROC: 0.6177",Partially Comparable,Benchmarked the same three novelty detectors on vibration data.
+McKinnon et al. (2020),Wind Turbine Gearbox SCADA,Isolation Forest & One-Class SVM,Unsupervised,82.0%,0.8800,"Acc: 39.9%, ROC: 0.6177",Contextual Baseline,Standard industrial baseline on 10-minute SCADA averages.
+Amarbayasgalan & Ryu (2024),Motor Vibration,Deep Autoencoders + Outlier Scoring,Unsupervised,92.3%,0.9520,"Acc: 39.9%, ROC: 0.6177",Partially Comparable,Autoencoder representation learning for motor fault detection.
+Xu et al. (2024),CWRU Bearing Dataset,FFT + SVD + CNN-LSTM,Supervised (Multi-Class),99.2%,N/A,Acc: 39.9% (Unsupervised),Contextual Supervised,Supervised paper requiring balanced labelled fault samples.
+Rosa et al. (2024),CWRU Bearing Dataset,Deep Learning Benchmarking & Leakage Study,Benchmark,N/A,N/A,Strict Recording-Wise Protocol,Methodological Baseline,Showed random window splits cause severe leakage; informed our split protocol.
